@@ -90,7 +90,7 @@ function logLine(ip, detail, cls) {
 }
 
 async function discover(subnet, port) {
-  const batchSize = 10;
+  const batchSize = 5;
   for (let i = 1; i <= 254; i += batchSize) {
     const ips = Array.from({ length: Math.min(batchSize, 254 - i + 1) }, (_, j) => `${subnet}.${i + j}`);
 
