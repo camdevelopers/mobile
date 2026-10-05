@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LAN Finder</title>
+<title>LAN Finder v2</title>
 <!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -91,7 +91,7 @@ async function discover(subnet, port) {
       batch.map(ip =>
         fetch(`http://${ip}:${port}/hello`, {
           targetAddressSpace: 'local',
-          signal: AbortSignal.timeout(600),
+          signal: AbortSignal.timeout(2000),
         }).then(r => r.text())
       )
     );
