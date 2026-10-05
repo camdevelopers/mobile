@@ -36,14 +36,14 @@
 
 <div id="status"></div>
 <div id="result"></div>
-
+<div id="log" style="margin-top:1rem;max-height:300px;overflow-y:auto;font-size:.8rem;font-family:monospace;background:#111;padding:.8rem;border-radius:6px;"></div>   
 <script>
 const $subnet = document.getElementById('subnet');
 const $port = document.getElementById('port');
 const $status = document.getElementById('status');
 const $result = document.getElementById('result');
+const $log = document.getElementById('log');
 
-// Load saved config
 $subnet.value = localStorage.getItem('subnet') || '';
 $port.value = localStorage.getItem('port') || '3000';
 
@@ -67,48 +67,62 @@ document.getElementById('scan').onclick = async () => {
   localStorage.setItem('port', port);
 
   $result.textContent = '';
-  $status.textContent = `Scanning ${subnet}.1 – ${subnet}.254 :${port} …`;
+  $log.innerHTML = '';
+  $status.textContent = 'Scanning…';
 
   const found = await discover(subnet, port);
 
   if (found) {
     $result.innerHTML = `<span class="found">Found: ${found}:${port}</span>`;
-    $status.textContent = 'Done.';
     localStorage.setItem('server', `${found}:${port}`);
   } else {
     $result.innerHTML = `<span class="not-found">No server found on ${subnet}.0/24</span>`;
-    $status.textContent = 'Done.';
   }
+  $status.textContent = 'Done.';
 };
 
+function logLine(ip, detail, cls) {
+  const div = document.createElement('div');
+  div.textContent = `${ip} → ${detail}`;
+  if (cls) div.style.color = cls;
+  $log.appendChild(div);
+  $log.scrollTop = $log.scrollHeight;
+}
+
 async function discover(subnet, port) {
-  const ips = Array.from({ length: 254 }, (_, i) => `${subnet}.${i + 1}`);
-  // Batch in groups of 50 to avoid overwhelming the network
   const batchSize = 50;
-  for (let i = 0; i < ips.length; i += batchSize) {
-    const batch = ips.slice(i, i + batchSize);
+  for (let i = 1; i <= 254; i += batchSize) {
+    const ips = Array.from({ length: Math.min(batchSize, 254 - i + 1) }, (_, j) => `${subnet}.${i + j}`);
+
     const results = await Promise.allSettled(
-      batch.map(ip =>
+      ips.map(ip =>
         fetch(`http://${ip}:${port}/hello`, {
           targetAddressSpace: 'local',
-          signal: AbortSignal.timeout(2000),
-        }).then(r => r.text())
+          signal: AbortSignal.timeout(600),
+        }).then(r => ({ status: r.status, text: r.text() }))
       )
     );
+
     for (let j = 0; j < results.length; j++) {
+      const ip = ips[j];
       const r = results[j];
-      if (r.status === 'fulfilled' && r.value.trim() === 'yes') {
-        return batch[j];
+      if (r.status === 'fulfilled') {
+        const body = await r.value.text;
+        logLine(ip, `200 "${body.trim()}"`, body.trim() === 'yes' ? '#34d399' : '#fbbf24');
+        if (body.trim() === 'yes') return ip;
+      } else {
+        const err = r.reason?.name === 'TimeoutError' ? 'timeout' : (r.reason?.message || 'error');
+        logLine(ip, err, '#666');
       }
     }
-    $status.textContent = `Scanning ${subnet}.1 – ${subnet}.${Math.min(i + batchSize, 254)} …`;
+    $status.textContent = `Scanned ${Math.min(i + batchSize - 1, 254)}/254…`;
   }
   return null;
 }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
-}
+}   
 </script>
 </body>
 </html>   
