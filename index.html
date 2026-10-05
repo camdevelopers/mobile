@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LAN Finder v5</title>
+<title>LAN Finder v6</title>
 <!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -90,7 +90,7 @@ function logLine(ip, detail, cls) {
 }
 
 async function discover(subnet, port) {
-  const batchSize = 50;
+  const batchSize = 10;
   for (let i = 1; i <= 254; i += batchSize) {
     const ips = Array.from({ length: Math.min(batchSize, 254 - i + 1) }, (_, j) => `${subnet}.${i + j}`);
 
