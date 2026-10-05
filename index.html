@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LAN Finder</title>
+<!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 2rem; min-height: 100vh; }
+  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
+  .row { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  input { flex: 1; padding: .6rem; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; font-size: 1rem; }
+  button { padding: .6rem 1.2rem; border: none; border-radius: 6px; background: #4f46e5; color: #fff; font-size: 1rem; cursor: pointer; }
+  button:hover { background: #6366f1; }
+  #status { margin-top: 1rem; font-size: .9rem; color: #999; }
+  #result { margin-top: 1rem; font-size: 1.1rem; }
+  .found { color: #34d399; }
+  .not-found { color: #f87171; }
+</style>
+</head>
+<body>
+<h1>LAN Server Discovery</h1>
+
+<div class="row">
+  <input id="subnet" type="text" placeholder="e.g. 192.168.1" />
+  <button id="save">Save</button>
+  <button id="change">Change</button>
+</div>
+<div class="row">
+  <input id="port" type="number" placeholder="3000" style="max-width:100px" />
+  <button id="scan">Scan</button>
+</div>
+
+<div id="status"></div>
+<div id="result"></div>
+
+<script>
+const $subnet = document.getElementById('subnet');
+const $port = document.getElementById('port');
+const $status = document.getElementById('status');
+const $result = document.getElementById('result');
+
+// Load saved config
+$subnet.value = localStorage.getItem('subnet') || '';
+$port.value = localStorage.getItem('port') || '3000';
+
+document.getElementById('save').onclick = () => {
+  localStorage.setItem('subnet', $subnet.value.trim());
+  $status.textContent = 'Saved.';
+};
+
+document.getElementById('change').onclick = () => {
+  $subnet.value = '';
+  $subnet.focus();
+  $status.textContent = 'Enter new subnet.';
+};
+
+document.getElementById('scan').onclick = async () => {
+  const subnet = $subnet.value.trim();
+  const port = $port.value || '3000';
+  if (!subnet) { $status.textContent = 'Enter a subnet first.'; return; }
+
+  localStorage.setItem('subnet', subnet);
+  localStorage.setItem('port', port);
+
+  $result.textContent = '';
+  $status.textContent = `Scanning ${subnet}.1 – ${subnet}.254 :${port} …`;
+
+  const found = await discover(subnet, port);
+
+  if (found) {
+    $result.innerHTML = `<span class="found">Found: ${found}:${port}</span>`;
+    $status.textContent = 'Done.';
+    localStorage.setItem('server', `${found}:${port}`);
+  } else {
+    $result.innerHTML = `<span class="not-found">No server found on ${subnet}.0/24</span>`;
+    $status.textContent = 'Done.';
+  }
+};
+
+async function discover(subnet, port) {
+  const ips = Array.from({ length: 254 }, (_, i) => `${subnet}.${i + 1}`);
+  // Batch in groups of 50 to avoid overwhelming the network
+  const batchSize = 50;
+  for (let i = 0; i < ips.length; i += batchSize) {
+    const batch = ips.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(ip =>
+        fetch(`http://${ip}:${port}/hello`, {
+          targetAddressSpace: 'local',
+          signal: AbortSignal.timeout(600),
+        }).then(r => r.text())
+      )
+    );
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      if (r.status === 'fulfilled' && r.value.trim() === 'yes') {
+        return batch[j];
+      }
+    }
+    $status.textContent = `Scanning ${subnet}.1 – ${subnet}.${Math.min(i + batchSize, 254)} …`;
+  }
+  return null;
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>   
