@@ -3,46 +3,71 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LAN Finder v6</title>
-<!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
+<title>LAN Finder v8</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 2rem; min-height: 100vh; }
-  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
-  .row { display: flex; gap: .5rem; margin-bottom: 1rem; }
-  input { flex: 1; padding: .6rem; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; font-size: 1rem; }
-  button { padding: .6rem 1.2rem; border: none; border-radius: 6px; background: #4f46e5; color: #fff; font-size: 1rem; cursor: pointer; }
+  body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 1rem; min-height: 100vh; }
+  h1 { font-size: 1.3rem; margin-bottom: 1rem; }
+  .row { display: flex; gap: .5rem; margin-bottom: .8rem; flex-wrap: wrap; }
+  input { flex: 1; padding: .55rem; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; font-size: .95rem; min-width: 80px; }
+  button { padding: .55rem 1rem; border: none; border-radius: 6px; background: #4f46e5; color: #fff; font-size: .95rem; cursor: pointer; }
   button:hover { background: #6366f1; }
-  #status { margin-top: 1rem; font-size: .9rem; color: #999; }
-  #result { margin-top: 1rem; font-size: 1.1rem; }
+  button:disabled { background: #333; color: #666; }
+  #status { margin: .5rem 0; font-size: .85rem; color: #999; }
+  #result { margin: .5rem 0; font-size: 1rem; }
   .found { color: #34d399; }
   .not-found { color: #f87171; }
+
+  /* Camera */
+  #cam-section { margin-top: 1.5rem; }
+  #video { width: 100%; border-radius: 8px; display: none; }
+  #crop-wrap { position: relative; display: none; margin-top: .5rem; }
+  #crop-canvas { width: 100%; border-radius: 8px; display: block; }
+  #crop-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  #crop-box { position: absolute; border: 2px solid #34d399; background: rgba(52,211,153,.15); display: none; }
+  .hint { font-size: .8rem; color: #888; margin-top: .3rem; }
 </style>
 </head>
 <body>
-<h1>LAN Server Discovery</h1>
+<h1>LAN Server</h1>
 
 <div class="row">
-  <input id="subnet" type="text" placeholder="e.g. 192.168.1" />
+  <input id="subnet" type="text" placeholder="192.168.1" />
   <button id="save">Save</button>
   <button id="change">Change</button>
 </div>
 <div class="row">
-  <input id="port" type="number" placeholder="3000" style="max-width:100px" />
+  <input id="port" type="number" placeholder="3000" style="max-width:90px" />
   <button id="scan">Scan</button>
 </div>
-
 <div id="status"></div>
 <div id="result"></div>
-<div id="log" style="margin-top:1rem;max-height:300px;overflow-y:auto;font-size:.8rem;font-family:monospace;background:#111;padding:.8rem;border-radius:6px;"></div>   
-<script>
+
+<!-- Camera section -->
+<div id="cam-section" style="display:none">
+  <h1>Camera</h1>
+  <video id="video" autoplay playsinline></video>
+  <div id="crop-wrap">
+    <canvas id="crop-canvas"></canvas>
+    <canvas id="crop-overlay"></canvas>
+    <div id="crop-box"></div>
+  </div>
+  <p class="hint" id="crop-hint">Drag to select crop area</p>
+  <div class="row" style="margin-top:.8rem">
+    <button id="capture">Capture</button>
+    <button id="reset-crop" style="display:none">Reset Crop</button>
+    <button id="send" style="display:none">Send to Server</button>
+  </div>
+  <div id="cam-status" style="margin-top:.5rem;font-size:.85rem;color:#999"></div>
+</div>
+
+<script type="module">
 const $subnet = document.getElementById('subnet');
 const $port = document.getElementById('port');
 const $status = document.getElementById('status');
 const $result = document.getElementById('result');
-const $log = document.getElementById('log');
 
 $subnet.value = localStorage.getItem('subnet') || '';
 $port.value = localStorage.getItem('port') || '3000';
@@ -51,107 +76,179 @@ document.getElementById('save').onclick = () => {
   localStorage.setItem('subnet', $subnet.value.trim());
   $status.textContent = 'Saved.';
 };
-
 document.getElementById('change').onclick = () => {
-  $subnet.value = '';
-  $subnet.focus();
-  $status.textContent = 'Enter new subnet.';
+  $subnet.value = ''; $subnet.focus();
 };
-
 document.getElementById('scan').onclick = async () => {
-  const subnet = $subnet.value.trim();
-  const port = $port.value || '3000';
-  if (!subnet) { $status.textContent = 'Enter a subnet first.'; return; }
-
+  const subnet = $subnet.value.trim(), port = $port.value || '3000';
+  if (!subnet) return;
   localStorage.setItem('subnet', subnet);
   localStorage.setItem('port', port);
-
   $result.textContent = '';
-  $log.innerHTML = '';
   $status.textContent = 'Scanning…';
-
   const found = await discover(subnet, port);
-
   if (found) {
     $result.innerHTML = `<span class="found">Found: ${found}:${port}</span>`;
     localStorage.setItem('server', `${found}:${port}`);
+    openCamera();
   } else {
-    $result.innerHTML = `<span class="not-found">No server found on ${subnet}.0/24</span>`;
+    $result.innerHTML = `<span class="not-found">Not found</span>`;
   }
   $status.textContent = 'Done.';
 };
 
-function logLine(ip, detail, cls) {
-  const div = document.createElement('div');
-  div.textContent = `${ip} → ${detail}`;
-  if (cls) div.style.color = cls;
-  $log.appendChild(div);
-  $log.scrollTop = $log.scrollHeight;
-}
-
 async function discover(subnet, port) {
-  const batchSize = 5;
+  const batchSize = 10;
   for (let i = 1; i <= 254; i += batchSize) {
     const ips = Array.from({ length: Math.min(batchSize, 254 - i + 1) }, (_, j) => `${subnet}.${i + j}`);
-
     const results = await Promise.allSettled(
-      ips.map(ip =>
-        fetch(`http://${ip}:${port}/hello`, {
-          targetAddressSpace: 'local',
-          signal: AbortSignal.timeout(600),
-        }).then(r => ({ status: r.status, text: r.text() }))
-      )
+      ips.map(ip => fetch(`http://${ip}:${port}/hello`, { targetAddressSpace: 'local', signal: AbortSignal.timeout(2000) }).then(r => r.text()))
     );
-
     for (let j = 0; j < results.length; j++) {
-      const ip = ips[j];
-      const r = results[j];
-      if (r.status === 'fulfilled') {
-        const body = await r.value.text;
-        logLine(ip, `200 "${body.trim()}"`, body.trim() === 'yes' ? '#34d399' : '#fbbf24');
-        if (body.trim() === 'yes') return ip;
-      } else {
-        const err = r.reason?.name === 'TimeoutError' ? 'timeout' : (r.reason?.message || 'error');
-        logLine(ip, err, '#666');
-      }
+      if (results[j].status === 'fulfilled' && results[j].value.trim() === 'yes') return ips[j];
     }
-    $status.textContent = `Scanned ${Math.min(i + batchSize - 1, 254)}/254…`;
   }
   return null;
 }
 
-async function ping(ip, port) {
-  const el = document.createElement('div');
-  el.style.cssText = 'font-family:monospace;font-size:.85rem;margin:.3rem 0;';
-  document.body.appendChild(el);
+// ─── Camera ───────────────────────────────────────────────
+let stream = null;
+let capturedImage = null; // ImageData of cropped region
+let cropRect = null;      // {x, y, w, h} in canvas coords
 
-  const t0 = performance.now();
-  el.textContent = `${ip}:${port} …`;
+const video = document.getElementById('video');
+const cropCanvas = document.getElementById('crop-canvas');
+const overlay = document.getElementById('crop-overlay');
+const cropBox = document.getElementById('crop-box');
+const cropWrap = document.getElementById('crop-wrap');
+const camSection = document.getElementById('cam-section');
+const camStatus = document.getElementById('cam-status');
+const captureBtn = document.getElementById('capture');
+const resetBtn = document.getElementById('reset-crop');
+const sendBtn = document.getElementById('send');
 
+async function openCamera() {
+  camSection.style.display = 'block';
   try {
-    const res = await fetch(`http://${ip}:${port}/hello`, {
-      targetAddressSpace: 'local',
-      signal: AbortSignal.timeout(3000),
-    });
-    const ms = Math.round(performance.now() - t0);
-    const body = await res.text();
-    el.textContent = `${ip}:${port} → ${res.status} "${body}" in ${ms}ms`;
-    el.style.color = res.status === 200 ? '#34d399' : '#fbbf24';
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    cropWrap.style.display = 'none';
+    captureBtn.disabled = false;
   } catch (e) {
-    const ms = Math.round(performance.now() - t0);
-    el.textContent = `${ip}:${port} → ${e.name} after ${ms}ms`;
-    el.style.color = '#f87171';
+    camStatus.textContent = `Camera error: ${e.message}`;
   }
 }
 
-// Test
-(async () => {
-  await ping('192.168.29.165', 3000);
-})();
+captureBtn.onclick = () => {
+  const w = video.videoWidth, h = video.videoHeight;
+  cropCanvas.width = w;
+  cropCanvas.height = h;
+  cropCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
+  overlay.width = w;
+  overlay.height = h;
+  video.style.display = 'none';
+  cropWrap.style.display = 'block';
+  cropRect = null;
+  cropBox.style.display = 'none';
+  resetBtn.style.display = 'none';
+  sendBtn.style.display = 'none';
+  camStatus.textContent = 'Drag to select crop area';
+};
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js');
-}   
+// Crop selection via touch/mouse
+let dragging = false, startX = 0, startY = 0;
+const octx = overlay.getContext('2d');
+
+function getPos(e) {
+  const rect = overlay.getBoundingClientRect();
+  const scaleX = overlay.width / rect.width;
+  const scaleY = overlay.height / rect.height;
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+
+function onDown(e) {
+  if (!cropCanvas.width) return;
+  e.preventDefault();
+  dragging = true;
+  const p = getPos(e);
+  startX = p.x; startY = p.y;
+}
+function onMove(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  const p = getPos(e);
+  const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
+  const w = Math.abs(p.x - startX), h = Math.abs(p.y - startY);
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  octx.fillStyle = 'rgba(0,0,0,0.5)';
+  octx.fillRect(0, 0, overlay.width, overlay.height);
+  octx.clearRect(x, y, w, h);
+  // Position the DOM crop-box (visual border)
+  const rect = overlay.getBoundingClientRect();
+  cropBox.style.display = 'block';
+  cropBox.style.left = (x / overlay.width * rect.width) + 'px';
+  cropBox.style.top = (y / overlay.height * rect.height) + 'px';
+  cropBox.style.width = (w / overlay.width * rect.width) + 'px';
+  cropBox.style.height = (h / overlay.height * rect.height) + 'px';
+  cropRect = { x, y, w, h };
+}
+function onUp() {
+  if (!dragging) return;
+  dragging = false;
+  if (cropRect && cropRect.w > 10 && cropRect.h > 10) {
+    resetBtn.style.display = 'inline-block';
+    sendBtn.style.display = 'inline-block';
+    camStatus.textContent = 'Crop selected. Tap "Send to Server" or "Reset Crop".';
+  }
+}
+
+overlay.addEventListener('mousedown', onDown);
+overlay.addEventListener('mousemove', onMove);
+overlay.addEventListener('mouseup', onUp);
+overlay.addEventListener('touchstart', onDown, { passive: false });
+overlay.addEventListener('touchmove', onMove, { passive: false });
+overlay.addEventListener('touchend', onUp);
+
+resetBtn.onclick = () => {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  cropBox.style.display = 'none';
+  cropRect = null;
+  resetBtn.style.display = 'none';
+  sendBtn.style.display = 'none';
+  camStatus.textContent = 'Drag to select crop area';
+};
+
+sendBtn.onclick = async () => {
+  if (!cropRect) return;
+  const server = localStorage.getItem('server');
+  if (!server) { camStatus.textContent = 'No server found.'; return; }
+
+  // Crop
+  const tmp = document.createElement('canvas');
+  tmp.width = cropRect.w;
+  tmp.height = cropRect.h;
+  tmp.getContext('2d').drawImage(cropCanvas, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h);
+
+  sendBtn.disabled = true;
+  camStatus.textContent = 'Uploading…';
+
+  try {
+    const blob = await new Promise(r => tmp.toBlob(r, 'image/png'));
+    const form = new FormData();
+    form.append('image', blob, 'photo.png');
+    const res = await fetch(`http://${server}/upload`, { method: 'POST', body: form, targetAddressSpace: 'local' });
+    camStatus.textContent = res.ok ? `Sent! (${cropRect.w}×${cropRect.h}px)` : `Server: ${res.status}`;
+  } catch (e) {
+    camStatus.textContent = `Upload failed: ${e.message}`;
+  }
+  sendBtn.disabled = false;
+};
+
+// Service worker
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>   
