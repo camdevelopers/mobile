@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LAN Finder v4</title>
+<title>LAN Finder v5</title>
 <!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -146,7 +146,7 @@ async function ping(ip, port) {
 
 // Test
 (async () => {
-  await ping('192.168.1.42', 3000);
+  await ping('192.168.29.165', 3000);
 })();
 
 if ('serviceWorker' in navigator) {
