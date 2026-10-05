@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LAN Finder v2</title>
+<title>LAN Finder v3</title>
 <!-- <link rel="manifest" href='data:application/json,{"name":"LAN Finder","short_name":"LANFinder","start_url":".","display":"standalone","background_color":"#1a1a2e","theme_color":"#1a1a2e"}'> -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>LAN Server Discovery</h1>
+<h1>LAN Server Discovery v3</h1>
 
 <div class="row">
   <input id="subnet" type="text" placeholder="e.g. 192.168.1" />
@@ -119,6 +119,33 @@ async function discover(subnet, port) {
   }
   return null;
 }
+
+async function ping(ip, port) {
+  const el = document.createElement('div');
+  el.style.cssText = 'font-family:monospace;font-size:.85rem;margin:.3rem 0;';
+  document.body.appendChild(el);
+
+  const t0 = performance.now();
+  el.textContent = `${ip}:${port} …`;
+
+  try {
+    const res = await fetch(`http://${ip}:${port}/hello`, {
+      targetAddressSpace: 'local',
+      signal: AbortSignal.timeout(3000),
+    });
+    const ms = Math.round(performance.now() - t0);
+    const body = await res.text();
+    el.textContent = `${ip}:${port} → ${res.status} "${body}" in ${ms}ms`;
+    el.style.color = res.status === 200 ? '#34d399' : '#fbbf24';
+  } catch (e) {
+    const ms = Math.round(performance.now() - t0);
+    el.textContent = `${ip}:${port} → ${e.name} after ${ms}ms`;
+    el.style.color = '#f87171';
+  }
+}
+
+// Test
+await ping('192.168.29.165', 3000);   
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
